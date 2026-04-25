@@ -26,7 +26,6 @@ import org.adempiere.webui.desktop.FavouriteController;
 import org.adempiere.webui.panel.AbstractMenuPanel;
 import org.adempiere.webui.panel.MenuTreePanel;
 import org.adempiere.webui.theme.ThemeManager;
-import org.adempiere.webui.util.Icon;
 import org.adempiere.webui.util.TreeItemAction;
 import org.adempiere.webui.util.TreeNodeAction;
 import org.adempiere.webui.util.TreeUtils;
@@ -824,9 +823,12 @@ public class MultiLangMenuSearchController extends MenuSearchController {
 		if (!iconSclassResolved) {
 			iconSclassResolved = true;
 			try {
-				// iDempiere 14+: Icon.getIconSclass(String)
-				java.lang.reflect.Method m = Icon.class.getMethod("getIconSclass", String.class);
-				cachedNewIconSclass = (String) m.invoke(null, Icon.NEW);
+				// iDempiere 14+: Icon.getIconSclass(String) + Icon.NEW constant
+				Class<?> iconClass = Class.forName("org.adempiere.webui.util.Icon");
+				java.lang.reflect.Field newField = iconClass.getField("NEW");
+				String newConst = (String) newField.get(null);
+				java.lang.reflect.Method m = iconClass.getMethod("getIconSclass", String.class);
+				cachedNewIconSclass = (String) m.invoke(null, newConst);
 			} catch (Exception e) {
 				// iDempiere 12 and earlier: direct CSS class
 				cachedNewIconSclass = "z-icon-New";

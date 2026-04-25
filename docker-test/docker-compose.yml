@@ -14,7 +14,7 @@ services:
       - -c
       - |
         cp /custom-plugins/*.jar /opt/idempiere/plugins/
-        grep -q multilang /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info 2>/dev/null ||           echo 'tw.idempiere.multilang.search,1.0.0.202604251155,plugins/tw.idempiere.multilang.search_1.0.0.202604251155.jar,4,false' >> /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info
+        grep -q tw.idempiere.multilang.search /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info 2>/dev/null ||           echo 'tw.idempiere.multilang.search,1.0.0.202604251227,plugins/tw.idempiere.multilang.search_1.0.0.202604251227.jar,4,false' >> /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info
         exec ./docker-entrypoint.sh idempiere
     environment:
       DB_HOST: postgres
