@@ -1,1 +1,6 @@
 reference/
+target/
+.settings/
+.project
+.classpath
+*.class

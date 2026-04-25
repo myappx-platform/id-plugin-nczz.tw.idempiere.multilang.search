@@ -1,0 +1,11 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.idempiere.zk.multilang.search</groupId>
+        <artifactId>org.idempiere.zk.multilang.search.parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../org.idempiere.zk.multilang.search.parent/pom.xml</relativePath>
+    </parent>
+    <artifactId>org.idempiere.zk.multilang.search</artifactId>
+    <packaging>eclipse-plugin</packaging>
+</project>
