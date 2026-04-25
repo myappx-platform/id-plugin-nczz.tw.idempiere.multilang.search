@@ -16,21 +16,29 @@ Search menu items across **all translated languages** from the global search box
 
 1. Download `org.idempiere.zk.multilang.search_x.x.x.jar` from [Releases](../../releases)
 
-2. Copy the JAR to your iDempiere `plugins/` directory:
-   ```bash
-   cp org.idempiere.zk.multilang.search_*.jar /opt/idempiere/plugins/
-   ```
+2. Open the Felix Web Console: `http://<your-server>:8080/osgi/system/console/bundles`
+   - Login: `SuperUser` / `System`
 
-3. Register in `bundles.info`:
-   ```bash
-   echo "org.idempiere.zk.multilang.search,1.0.0,plugins/org.idempiere.zk.multilang.search_1.0.0.jar,4,false" \
-     >> /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info
-   ```
-   Adjust the version in both the filename and the entry to match your downloaded JAR.
+3. Click **Install/Update**, select the downloaded JAR, click **Install or Update**
 
-4. Restart iDempiere
+4. Verify the bundle appears with status **Fragment**
 
-5. Log in and test: type a menu name in another language in the search box
+5. Restart iDempiere (required for fragment to take effect and ZK config to load)
+
+6. Log in and test: type a menu name in another language in the search box
+
+### Installation via CLI
+
+```bash
+# Upload and install via Felix Web Console API
+curl -u "SuperUser:System" \
+  -F "bundlefile=@org.idempiere.zk.multilang.search_1.0.0.jar" \
+  -F "action=install" -F "bundlestartlevel=4" \
+  http://localhost:8080/osgi/system/console/bundles
+
+# Restart iDempiere
+systemctl restart idempiere
+```
 
 ### Installation with Docker
 
@@ -65,8 +73,8 @@ Multi-Language Global Search patched successfully
 
 ### Uninstallation
 
-1. Remove the JAR from `plugins/`
-2. Remove the line from `bundles.info`
+1. Open Felix Web Console: `http://<your-server>:8080/osgi/system/console/bundles`
+2. Find `org.idempiere.zk.multilang.search`, click **Uninstall**
 3. Restart iDempiere
 
 No database changes, no residual configuration.
