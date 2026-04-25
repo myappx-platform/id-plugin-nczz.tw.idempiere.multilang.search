@@ -3,7 +3,56 @@
 > 專案：`org.idempiere.zk.multilang.search`
 > 類型：OSGi Fragment（Fragment-Host: org.adempiere.ui.zk）
 > 目標：讓 iDempiere 上方搜尋框支援跨語系搜尋，使用者輸入任何已翻譯語系的選單名稱都能找到對應項目
-> 版本：v0.5 — 五層完整展開
+> 版本：v1.0 — 五層完整展開 + Spike + 檢視補充 + 長期路線圖
+
+---
+
+## 0. Spike/POC（在正式開發前驗證核心假設）
+
+### 0.1 驗證 config.xml listener 註冊機制
+- 0.1.1 建立最小 fragment（只有 MANIFEST.MF + config.xml + 一個 WebAppInit class）
+  - 0.1.1.1 WebAppInit.init() 中只做 `logger.info("MultiLang Search plugin loaded")`
+    - 若 log 出現 → config.xml 機制可行
+    - 若 log 未出現 → 整個 runtime patching 方案需重新設計
+  - 0.1.1.2 部署到 iDempiere，重啟，檢查 server.log
+    - 確認 ZK ConfigParser 有掃描到 metainfo/zk/config.xml
+- 0.1.2 驗證 UiLifeCycle 動態註冊
+  - 0.1.2.1 在 WebAppInit.init() 中呼叫 wapp.getConfiguration().addListener()
+    - 確認 addListener 不拋 Exception
+  - 0.1.2.2 在 UiLifeCycle.afterComponentAttached() 中 log comp.getClass().getName()
+    - 確認 listener 被觸發，觀察觸發頻率
+
+### 0.2 驗證 GlobalSearch 替換可行性
+- 0.2.1 建立 dummy controller（複製原始邏輯，不加多語系）
+  - 0.2.1.1 確認 `new GlobalSearch(dummyController)` 不拋 Exception
+    - 驗證 IS-A MenuSearchController 的型別檢查通過
+  - 0.2.1.2 確認替換後的 GlobalSearch 功能完整
+    - 搜尋、選擇、開啟視窗、收藏、最近項目、Document Search tab
+    - 鍵盤操作：↑↓ 選擇、Enter 開啟、Alt+G 聚焦
+- 0.2.2 驗證 afterComponentAttached 觸發時機
+  - 0.2.2.1 在 listener 中 log GlobalSearch 的子元件數量
+    - 若 > 0 → GlobalSearch 已完全初始化，時機正確
+    - 若 = 0 → 觸發太早，需改用其他 hook 或延遲 patching
+- 0.2.3 量測雙重建立的效能開銷
+  - 0.2.3.1 計時：原始 Desktop 建立 vs. 加上 patching 的 Desktop 建立
+    - 差異 < 200ms → 可接受
+    - 差異 > 500ms → 需考慮優化（如重用舊 controller 的 model）
+
+### 0.3 驗證「不複製 MenuSearchController」的替代方案（半天 spike）
+- 0.3.1 嘗試 reflection patch 現有 controller 的 model
+  - 0.3.1.1 取得 menuController.model（private ListModelList<MenuItem>）
+    - 遍歷 model，用 MTreeNode.getNode_ID() 建立 altLabelsMap
+  - 0.3.1.2 嘗試替換 model field 為自訂 ListModelList subclass
+    - 自訂 subclass 在被 ListModels.toListSubModel() 使用時注入多語系 comparator
+  - 0.3.1.3 評估結果
+    - 若可行 → 不需要複製 813 行，大幅降低維護成本
+    - 若不可行（預判：ListModels.toListSubModel 的 comparator 是外部傳入，無法攔截）→ 確認必須複製，記錄原因
+
+### 0.4 Spike 結論與決策
+- 0.4.1 記錄每個假設的驗證結果
+- 0.4.2 若 0.1 失敗 → 需尋找替代的 hook 機制（可能回到 ZUL 覆蓋方案）
+- 0.4.3 若 0.3 成功 → 調整 WBS 第 4 節，改用 model-patching 方案
+- 0.4.4 若全部通過 → 進入正式開發
 
 ---
 
@@ -157,8 +206,9 @@
     - GlobalSearch constructor 接受 MenuSearchController（IS-A 關係成立）
   - 3.3.2.2 設定 id = "menuLookup"
     - HeaderPanel.closeSearchPopup() 和 onClientInfo() 用 getFellow("menuLookup") 找元件
-  - 3.3.2.3 設定 placeholder 和 tooltip = "Alt+G"
-    - 保持與原始一致的 UX
+  - 3.3.2.3 從舊 GlobalSearch 複製 placeholder 和 tooltip 屬性
+    - 不硬編碼 "Alt+G"，避免覆蓋使用者自訂值
+    - `newGs.setPlaceHolderText(oldGs.getPlaceHolderText())` 或 reflection 取值
 - 3.3.3 DOM 替換
   - 3.3.3.1 oldGs.getParent().insertBefore(newGs, oldGs)
     - 在舊元件前面插入新元件
@@ -250,6 +300,11 @@
     - 同樣 accent-insensitive, case-insensitive
   - 4.3.1.3 匹配優先順序：當前語系 > 其他語系
     - 排序時當前語系匹配的排前面（可選，v0.1 不實作）
+- 4.3.3 Comparator 存取 altLabelsMap 的方式
+  - 4.3.3.1 Comparator 作為 controller 的 inner class
+    - 可直接存取外部 class 的 altLabelsMap field
+  - 4.3.3.2 或在 constructor 中傳入 altLabelsMap reference
+    - 更明確的依賴關係，但需要每次 onSearchEcho() 建立時傳入
 - 4.3.2 搜尋文字處理
   - 4.3.2.1 使用 Util.deleteAccents() 去除重音符號
     - 與原始邏輯一致
@@ -305,6 +360,8 @@
     - 在 refreshModel() 中計時
   - 5.2.1.2 Desktop 建立總時間增加 < 200ms
     - 包含 patching 和 model 重建
+    - ⚠️ 已知 tradeoff：GlobalSearch 會被建立兩次（原始 + 替換）
+    - 若超過 200ms，考慮優化：重用舊 controller 的 Tree model 而非重新遍歷
   - 5.2.1.3 記憶體增加 < 1MB per session
     - Map<Integer, List<String>> 的大小
 - 5.2.2 搜尋延遲
@@ -397,27 +454,15 @@
 
 > 以下是五層展開後重新檢視發現的不足條件，需納入對應的開發項目中。
 
-### 7.1 CJK 搜尋特性（影響 4.3）
+### 7.1 CJK 搜尋特性（影響 4.3）— 延至 v0.2
 
 原始 `MenuListComparator` 的規則是 `<3 字元用 startsWith，≥3 字元用 contains`。但 CJK（中日韓）字元每個字都有意義：
 
-- 輸入「採」（1 字元）應該能找到「採購單」→ 需要 contains
-- 輸入「仕」（1 字元）應該能找到「仕入先」→ 需要 contains
+- 輸入「採」（1 字元）→ startsWith 匹配「採購單」→ ✅ 原始邏輯已可用
+- 輸入「購」（1 字元）→ startsWith 不匹配「採購單」→ ❌ 需要 contains
 
-**決策**：偵測搜尋文字是否包含 CJK 字元，若是則不論長度都用 `contains`。
-
-```java
-boolean isCJK = searchText.codePoints().anyMatch(cp ->
-    Character.UnicodeScript.of(cp) == Character.UnicodeScript.HAN ||
-    Character.UnicodeScript.of(cp) == Character.UnicodeScript.HIRAGANA ||
-    Character.UnicodeScript.of(cp) == Character.UnicodeScript.KATAKANA ||
-    Character.UnicodeScript.of(cp) == Character.UnicodeScript.HANGUL);
-if (isCJK || searchText.length() >= 3) {
-    match = label.contains(searchText);
-} else {
-    match = label.startsWith(searchText);
-}
-```
+**v0.1 決策**：不改動，保持與原始行為一致，降低風險。
+**v0.2 決策**：偵測 CJK 字元，改用 contains。這是獨立的 enhancement，不只影響多語系搜尋，也改善原始的單語系搜尋體驗。
 
 ### 7.2 Thread Safety（影響 3.1, 2.3）
 
@@ -483,3 +528,34 @@ iDempiere 使用 GPLv2。本 plugin 作為 OSGi fragment 附加到 GPLv2 的 hos
 | 11.x | 9.6.x | 需確認 | 待驗證 |
 
 **開發時**：先支援 14.x，再回溯驗證 12.x 和 11.x。
+
+---
+
+## 8. 長期路線圖
+
+### 8.1 貢獻回 iDempiere Core
+- 8.1.1 向 iDempiere JIRA 提 Feature Request
+  - 標題：Multi-language menu search in Global Search Box
+  - 附上 plugin 的設計文件和實測結果作為 POC
+- 8.1.2 準備 Core PR
+  - 直接在 MenuSearchController 中加入多語系支援（不需 reflection、不需複製）
+  - 在 MenuListComparator 中增加 alternativeLabels 比對
+  - 在 refreshModel() 中載入 AD_Menu_Trl
+- 8.1.3 若 PR 被接受
+  - Plugin 可退役（或轉為只提供 CJK 增強等額外功能）
+  - 維護成本歸零
+
+### 8.2 v0.2 功能規劃
+- 8.2.1 CJK 搜尋增強（7.1）
+- 8.2.2 搜尋結果排序優化（當前語系匹配優先）
+- 8.2.3 Tooltip 顯示匹配的語系名稱
+- 8.2.4 SysConfig 開關（允許管理員停用多語系搜尋）
+
+### 8.3 維護計劃
+- 8.3.1 每次 iDempiere 升版時 diff 以下檔案
+  - MenuSearchController.java（813 行，核心依賴）
+  - GlobalSearch.java（278 行，constructor + field names）
+  - HeaderPanel.java（233 行，globalSearch field name）
+- 8.3.2 建立自動化 diff 腳本
+  - 比對 iDempiere release tag 之間的變更
+  - 標記影響本 plugin 的改動
