@@ -202,4 +202,4 @@ GPLv2 — same as iDempiere.
 
 ## Credits
 
-Built by the [iDempiere Taiwan Community (蒜頭廟)](https://www.idempiere.tw/).
+Built by the [iDempiere Taiwan Community](https://www.idempiere.tw/).
