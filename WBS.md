@@ -241,9 +241,10 @@
     - GlobalSearch constructor 接受 MenuSearchController（IS-A 關係成立）
   - 3.3.2.2 設定 id = "menuLookup"
     - HeaderPanel.closeSearchPopup() 和 onClientInfo() 用 getFellow("menuLookup") 找元件
-  - 3.3.2.3 從舊 GlobalSearch 複製 placeholder 和 tooltip 屬性
-    - 不硬編碼 "Alt+G"，避免覆蓋使用者自訂值
-    - `newGs.setPlaceHolderText(oldGs.getPlaceHolderText())` 或 reflection 取值
+  - 3.3.2.3 設定 placeholder = "Alt+G"，tooltip = "Alt+G"
+    - GlobalSearch 有 public setPlaceHolderText() 但沒有 getPlaceHolderText()
+    - HeaderPanel 硬編碼 "Alt+G"，不存在使用者自訂值的情況
+    - 直接硬編碼即可
 - 3.3.3 DOM 替換
   - 3.3.3.1 oldGs.getParent().insertBefore(newGs, oldGs)
     - 在舊元件前面插入新元件
@@ -251,6 +252,40 @@
     - 移除舊元件（觸發 GC）
   - 3.3.3.3 確認替換後 DOM 結構正確
     - 新 GlobalSearch 應在 hbox > desktop-header-left 內
+
+### 3.5 FavouriteController callback 洩漏處理
+- 3.5.1 問題描述
+  - 舊 controller 在 create() 中註冊了 FavouriteController.addDeletedCallback / addInsertedCallback
+  - 替換後新 controller 又註冊一組 → FavouriteController 持有兩組 callback
+  - 舊 callback 引用已 detach 的 listbox → 操作無效但不報錯
+  - 舊 callback 持有舊 controller 的 this reference → 阻止 GC（每 session 洩漏幾 KB）
+- 3.5.2 v0.1 決策：接受洩漏，記錄為已知限制
+  - 每 session 洩漏量極小（一個 MenuSearchController instance + 一個 detached Listbox）
+  - Session 結束時全部回收
+  - 記錄在 README 的已知限制中
+- 3.5.3 v0.2 改進方向
+  - 檢查 FavouriteController 是否有 removeCallback API
+  - 若有 → patching 前先移除舊 callback
+  - 若無 → 考慮用 WeakReference 包裝 callback
+
+### 3.6 echoEvent 時序與 GlobalSearch 的 ON_CREATE_ECHO_EVENT
+- 3.6.1 GlobalSearch 自己也用 echoEvent
+  - init() 中註冊 ON_CREATE_ECHO_EVENT（用於 client info 回傳後調整 popup 高度）
+  - 替換時的完整時序：
+    ```
+    1. 原始 GlobalSearch 建立 → 註冊 ON_CREATE_ECHO_EVENT
+    2. afterComponentAttached → 排程 onMultiLangPatch echoEvent
+    3. 原始 ON_CREATE_ECHO_EVENT 觸發（調整 popup）  ← 順序不保證
+    4. onMultiLangPatch 觸發 → 替換 GlobalSearch       ← 順序不保證
+    5. 新 GlobalSearch 建立 → 註冊自己的 ON_CREATE_ECHO_EVENT
+    6. 新 ON_CREATE_ECHO_EVENT 觸發
+    ```
+  - 步驟 3 和 4 的順序取決於 echoEvent 的排隊順序
+- 3.6.2 兩種情況都安全
+  - 若 3 先於 4：原始 GlobalSearch 正常初始化，然後被替換。新的也會正常初始化。
+  - 若 4 先於 3：原始 ON_CREATE_ECHO_EVENT 在已 detach 的元件上觸發，無害（ZK 不會報錯）。
+- 3.6.3 在 Spike 0.2 中驗證實際順序
+  - 在兩個 echoEvent handler 中都加 log，觀察觸發順序
 
 ### 3.4 更新 HeaderPanel.globalSearch field（reflection）
 - 3.4.1 找到 HeaderPanel 祖先元件
@@ -344,8 +379,12 @@
   - 4.3.2.2 或在 constructor 中傳入 altLabelsMap reference
     - 更明確的依賴關係，但需要每次 onSearchEcho() 建立時傳入
   - 4.3.2.3 Comparator 中取得 AD_Menu_ID 的方式
-    - `MenuItem.getData()` → cast to `DefaultTreeNode<?>` → `getData()` → cast to `MTreeNode` → `getNode_ID()`
-    - 若 getData() 回傳 Treeitem（非 model-based tree），改用 `Treeitem.getAttribute(M_TREE_NODE_ATTR)` 取 MTreeNode
+    - ⚠️ 只能從 o2（候選 MenuItem）取，o1（搜尋文字）的 getData() == null
+    - o1 是 `new MenuItem(value)` 建立的，只有 label，無 data
+    - 從 o2 取 AD_Menu_ID：
+      - `MenuItem.getData()` → cast to `DefaultTreeNode<?>` → `getData()` → cast to `MTreeNode` → `getNode_ID()`
+      - 若 getData() 回傳 Treeitem（非 model-based tree），改用 `Treeitem.getAttribute(M_TREE_NODE_ATTR)` 取 MTreeNode
+    - 若取不到 AD_Menu_ID（getData() 型別不符）→ 跳過多語系比對，只比對當前語系 label
 - 4.3.3 搜尋文字處理
   - 4.3.2.1 使用 Util.deleteAccents() 去除重音符號
     - 與原始邏輯一致
