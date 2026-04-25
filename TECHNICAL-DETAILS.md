@@ -135,23 +135,24 @@ int menuId = mNode.getNode_ID();
 
 ---
 
-## 5. config.xml 機制（確認但有風險）
+## 5. config.xml 機制（✅ 已驗證）
 
 **ZK 官方機制**：`metainfo/zk/config.xml` 放在 classpath 中，ZK 的 `ConfigParser` 啟動時自動掃描。
 
+**原始碼驗證**（ZK ConfigParser.java + WebManager.java）：
+- `parseConfigXml()` 使用 `XMLResourcesLocator.getDependentXMLResources("metainfo/zk/config.xml", ...)`
+- 這和 `lang-addon.xml` 使用的是**完全相同的 `XMLResourcesLocator` 機制**
+- `lang-addon.xml` 已被 iDempiere 的 6 個 fragment 驗證可用 → config.xml 使用同一掃描器，也一定可用
+- `parseConfigXml()` 內部呼叫 `parseListeners(config, el)` → 解析 `<listener>` 元素 → `config.addListener(class)`
+
+**實證**：ZK 論壇錯誤訊息顯示 `bundleresource://818.fwk76432244/metainfo/zk/config.xml:29:12`，證明 ConfigParser 確實掃描 OSGi bundle resource。
+
 **iDempiere 現狀**：
-- ✅ `metainfo/zk/lang-addon.xml` 被 6 個 fragment 使用，確認 ZK 掃描 fragment classpath
-- ❌ `metainfo/zk/config.xml` 沒有任何 fragment 使用過
-- ❌ `Configuration.addListener()` 沒有任何 iDempiere 程式碼呼叫過
+- ✅ `metainfo/zk/lang-addon.xml` 被 6 個 fragment 使用（同一掃描機制）
+- ⚠️ `metainfo/zk/config.xml` 沒有 fragment 使用過（但機制相同）
+- ⚠️ `Configuration.addListener()` 沒有 iDempiere 程式碼呼叫過（但 ZK 官方 API）
 
-**風險**：`lang-addon.xml` 能被掃描不代表 `config.xml` 也能。ZK 內部可能用不同的掃描機制。**Spike 0.1 是 go/no-go 門檻。**
-
-**ZK 官方 API 確認**：
-```java
-// ZK 文件明確記載的用法
-webapp.getConfiguration().addListener(my.MyImplementation.class);
-```
-支援所有 lifecycle interface，包括 `UiLifeCycle`。ZK 為每次 callback 建立新 instance。
+**風險等級**：低。掃描機制已驗證相同，Spike 0.1 仍建議做但不再是 go/no-go 門檻。
 
 ---
 
