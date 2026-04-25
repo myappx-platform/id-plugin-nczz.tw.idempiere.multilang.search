@@ -30,9 +30,15 @@
     - 搜尋、選擇、開啟視窗、收藏、最近項目、Document Search tab
     - 鍵盤操作：↑↓ 選擇、Enter 開啟、Alt+G 聚焦
 - 0.2.2 驗證 afterComponentAttached 觸發時機
-  - 0.2.2.1 在 listener 中 log GlobalSearch 的子元件數量
-    - 若 > 0 → GlobalSearch 已完全初始化，時機正確
-    - 若 = 0 → 觸發太早，需改用其他 hook 或延遲 patching
+  - 0.2.2.1 在 listener 中 log GlobalSearch 的 getId() 和子元件數量
+    - 預期：getId() == null（因為 setId 在 insertBefore 之後）
+    - 預期：子元件數量 > 0（GlobalSearch.init() 在 constructor 中已執行）
+  - 0.2.2.2 驗證 echoEvent 延遲 patching 的時序
+    - 在 echoEvent handler 中 log getId()
+    - 預期：getId() == "menuLookup"（createSearchPanel 已完成）
+  - 0.2.2.3 驗證延遲 patch 後 createSearchPanel() 的狀態
+    - HeaderPanel.globalSearch field 應指向舊 GlobalSearch（patch 前）
+    - patch 後用 reflection 更新為新 GlobalSearch
 - 0.2.3 量測雙重建立的效能開銷
   - 0.2.3.1 計時：原始 Desktop 建立 vs. 加上 patching 的 Desktop 建立
     - 差異 < 200ms → 可接受
@@ -159,19 +165,37 @@
 
 ### 3.1 GlobalSearch 元件偵測邏輯
 - 3.1.1 在 afterComponentAttached() 中檢查
-  - 3.1.1.1 `comp instanceof GlobalSearch`
-    - GlobalSearch 在 org.adempiere.webui.apps package
-    - Fragment 共享 classloader，instanceof 可正常運作
-  - 3.1.1.2 `"menuLookup".equals(comp.getId())`
-    - 雙重檢查避免誤判（可能有其他 GlobalSearch 實例）
-  - 3.1.1.3 檢查是否已被 patch 過（避免重複替換）
-    - 用 Component attribute 標記：`comp.setAttribute("multilang.patched", true)`
-    - 或檢查 controller 是否已是 MultiLangMenuSearchController
-- 3.1.2 效能考量
-  - 3.1.2.1 afterComponentAttached 對每個元件觸發
-    - instanceof + equals 是 O(1)，不影響效能
-  - 3.1.2.2 Desktop 建立完成後不再有新的 GlobalSearch
-    - 實際只觸發一次 patching
+  - 3.1.1.1 `comp instanceof GlobalSearch`（只用 instanceof，不檢查 ID）
+    - ⚠️ 此時 comp.getId() 仍為 null（setId 在 insertBefore 之後才呼叫）
+    - 因此不能用 `"menuLookup".equals(comp.getId())` 做判斷
+  - 3.1.1.2 **不立即 patch**，改為排程延遲事件
+    - `Events.echoEvent("onMultiLangPatch", comp, null)`
+    - 同時註冊一次性 event listener 處理 patch 邏輯
+    - echoEvent 會在當前 server execution 完成後、下一次 client round trip 時觸發
+    - 此時 createSearchPanel() 已完全執行完畢，ID 已設定，DOM 穩定
+  - 3.1.1.3 在延遲 handler 中做完整檢查
+    - `"menuLookup".equals(comp.getId())` — 確認是搜尋框的 GlobalSearch
+    - `comp.getAttribute("multilang.patched") != null` — 避免重複 patch
+    - 兩個條件都通過才執行 patchGlobalSearch()
+- 3.1.2 為什麼不能在 afterComponentAttached 中立即 patch
+  - 3.1.2.1 createSearchPanel() 的執行順序：
+    ```
+    insertBefore(globalSearch, stub)  ← afterComponentAttached 在這裡觸發
+    stub.detach()                     ← 還沒跑
+    globalSearch.setId("menuLookup")  ← 還沒跑
+    globalSearch.setPlaceHolderText() ← 還沒跑
+    ```
+  - 3.1.2.2 若此時替換 DOM：
+    - createSearchPanel() 後續的 setId/setPlaceHolderText 會設定到已被 detach 的舊元件
+    - HeaderPanel.globalSearch field 指向舊元件
+    - 導致 Alt+G、closeSearchPopup 等功能異常
+- 3.1.3 效能考量
+  - 3.1.3.1 afterComponentAttached 對每個元件觸發
+    - instanceof 是 O(1)，不影響效能
+  - 3.1.3.2 echoEvent 增加一次 client round trip
+    - 延遲約 10-50ms，使用者無感（Desktop 建立過程中）
+  - 3.1.3.3 每個 Desktop 只觸發一次 patching
+    - 多 tab 場景：每個 tab 獨立 patch，互不影響
 
 ### 3.2 從舊 GlobalSearch 提取 Tree（reflection）
 - 3.2.1 取得 GlobalSearch.menuController field
@@ -195,7 +219,12 @@
   - 3.2.3.3 任何 reflection 失敗都不應影響 iDempiere 正常運作
     - 用 try-catch 包裹整個 patching 邏輯
 
-### 3.3 建立新 GlobalSearch 並替換 DOM
+### 3.3 建立新 GlobalSearch 並替換 DOM（在延遲 handler 中執行）
+- 3.3.0 前置條件（由 3.1 的延遲 handler 保證）
+  - createSearchPanel() 已完全執行完畢
+  - comp.getId() == "menuLookup"
+  - HeaderPanel.globalSearch field 已指向 comp
+  - comp 未被 patch 過
 - 3.3.1 建立 MultiLangMenuSearchController
   - 3.3.1.1 new MultiLangMenuSearchController(tree)
     - 傳入從舊 controller 取得的 Tree
