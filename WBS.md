@@ -139,8 +139,9 @@
   - 2.2.1.1 透過 wapp.getConfiguration().addListener() 註冊 UiLifeCycle
     - addListener 接受 Class<?>，不是 instance
   - 2.2.1.2 只註冊一次（防止重複）
-    - 用 static boolean flag 或 WebApp attribute 標記
-    - 多次呼叫 addListener 同一 class 是否安全？需驗證
+    - 用 WebApp attribute 標記：`wapp.setAttribute("multilang.search.registered", true)`
+    - ❌ 不用 static boolean flag（WebApp 重啟時 JVM 不重啟，static 不會重置，但 Configuration 已清空，listener 消失）
+    - WebApp attribute 隨 WebApp 重啟自動清除，確保重新註冊
 - 2.2.2 錯誤處理
   - 2.2.2.1 init() 拋出 Exception 時 ZK 會 log 但不會阻止啟動
     - 確認不會影響 iDempiere 正常運作
@@ -196,6 +197,11 @@
     - 延遲約 10-50ms，使用者無感（Desktop 建立過程中）
   - 3.1.3.3 每個 Desktop 只觸發一次 patching
     - 多 tab 場景：每個 tab 獨立 patch，互不影響
+  - 3.1.3.4 echoEvent 造成的視覺延遲
+    - 初始頁面載入時使用者先看到原始搜尋框，echoEvent 回來後替換
+    - 本地網路延遲 10-50ms（無感），慢網路可能 200-500ms
+    - 期間搜尋框可用但只支援當前語系，不影響功能
+    - 記錄在 README 的已知行為中
 
 ### 3.2 從舊 GlobalSearch 提取 Tree（reflection）
 - 3.2.1 取得 GlobalSearch.menuController field
@@ -278,9 +284,9 @@
     - key = AD_Menu_ID, value = 其他語系的 Name 列表
     - 不需要存 AD_Language（搜尋時不區分來源語系）
   - 4.1.1.3 也查基礎表 AD_Menu.Name（當使用者語系非基礎語系時）
-    - 基礎語系的名稱不在 Trl 表中（或 IsTranslated='N'）
+    - 基礎語系的名稱可能在 Trl 表中 IsTranslated='N'，被上面的 WHERE 排除
     - 需要額外查：SELECT AD_Menu_ID, Name FROM AD_Menu
-    - 避免重複：排除與當前語系 label 相同的名稱
+    - v0.1 不做去重（與當前語系 label 重複的名稱讓 comparator 多比對一次，無害）
 - 4.1.2 載入時機
   - 4.1.2.1 在 refreshModel() 中，建完 model 後立即載入
     - refreshModel() 在 create() 中被呼叫，只執行一次
@@ -311,13 +317,16 @@
     - 用 MTreeNode.getNode_ID() 作為 AD_Menu_ID
     - 存入 Map<MenuItem, List<String>> 或擴充 MenuItem
 - 4.2.3 MenuItem 擴充策略
-  - 4.2.3.1 方案 A：用 Map<MenuItem, List<String>> 側邊存儲
+  - 4.2.3.1 方案 A：用 Map<Integer, List<String>> 側邊存儲（key = AD_Menu_ID）
     - 不修改 MenuItem class，最安全
-    - Comparator 需要存取這個 Map
+    - 與 4.1.1.2 的 Map 結構一致
+    - Comparator 透過 MenuItem.getData() → MTreeNode.getNode_ID() 查 Map
   - 4.2.3.2 方案 B：subclass MenuItem 增加 alternativeLabels field
     - 更乾淨但需要確認 MenuItem 的使用方式不會被影響
-  - 4.2.3.3 選擇方案 A（Map 側邊存儲）
-    - 理由：MenuItem 是 public class，其他 code 可能 instanceof 檢查
+  - 4.2.3.3 選擇方案 A（Map<Integer, List<String>>）
+    - 理由 1：MenuItem 沒有 override equals/hashCode，用 instance 做 key 在 model 重建時會失效
+    - 理由 2：AD_Menu_ID 是穩定的 key，不受 MenuItem 實例生命週期影響
+    - 理由 3：MenuItem 是 public class，其他 code 可能 instanceof 檢查
 
 ### 4.3 多語系 Comparator 邏輯
 - 4.3.1 擴充比對範圍
@@ -329,12 +338,15 @@
     - 同樣 accent-insensitive, case-insensitive
   - 4.3.1.3 匹配優先順序：當前語系 > 其他語系
     - 排序時當前語系匹配的排前面（可選，v0.1 不實作）
-- 4.3.3 Comparator 存取 altLabelsMap 的方式
-  - 4.3.3.1 Comparator 作為 controller 的 inner class
+- 4.3.2 Comparator 存取 altLabelsMap 的方式
+  - 4.3.2.1 Comparator 作為 controller 的 inner class
     - 可直接存取外部 class 的 altLabelsMap field
-  - 4.3.3.2 或在 constructor 中傳入 altLabelsMap reference
+  - 4.3.2.2 或在 constructor 中傳入 altLabelsMap reference
     - 更明確的依賴關係，但需要每次 onSearchEcho() 建立時傳入
-- 4.3.2 搜尋文字處理
+  - 4.3.2.3 Comparator 中取得 AD_Menu_ID 的方式
+    - `MenuItem.getData()` → cast to `DefaultTreeNode<?>` → `getData()` → cast to `MTreeNode` → `getNode_ID()`
+    - 若 getData() 回傳 Treeitem（非 model-based tree），改用 `Treeitem.getAttribute(M_TREE_NODE_ATTR)` 取 MTreeNode
+- 4.3.3 搜尋文字處理
   - 4.3.2.1 使用 Util.deleteAccents() 去除重音符號
     - 與原始邏輯一致
   - 4.3.2.2 toLowerCase() 統一大小寫
@@ -514,6 +526,7 @@
 | Reflection 取 field 失敗 | log WARNING，放棄 patching | 同上 |
 | AD_Menu_Trl 查詢失敗 | log WARNING，altLabelsMap 為空 | 搜尋框可用但只搜當前語系 |
 | DOM 替換失敗 | log ERROR，不 detach 舊元件 | 搜尋框維持原始行為 |
+| echoEvent 觸發時元件已 detach | 檢查 `comp.getPage() != null`，若 null 則跳過 | 無影響 |
 
 **實作**：整個 patching 邏輯用 try-catch 包裹，catch 中只 log 不 throw。
 
