@@ -1,4 +1,4 @@
-package org.adempiere.webui.apps;
+package tw.idempiere.multilang.search;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -13,6 +13,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import org.adempiere.webui.apps.GlobalSearch;
+import org.adempiere.webui.apps.MenuItem;
+import org.adempiere.webui.apps.MenuSearchController;
 import org.adempiere.webui.LayoutUtils;
 import org.adempiere.webui.component.Label;
 import org.adempiere.webui.component.ListHead;

@@ -1,136 +1,205 @@
 # iDempiere Multi-Language Global Search
 
-An iDempiere plugin that enables searching menu items across **all translated languages** in the global search box.
+Search menu items across **all translated languages** from the global search box — no configuration required.
 
-**Before:** A user logged in with `zh_TW` can only find menu items by their Chinese names.
-**After:** The same user can type `Purchase Order` and find `採購單`, or type `仕入` to find the Japanese translation — all from the same search box.
+**Before:** Logged in as `zh_TW`, you can only find menu items by Chinese names.
+**After:** Type `Purchase Order` and find `採購單`. Type `會計` from an English session and find `Accounting Rules`.
 
-## How It Works
+## For Users
 
-This plugin is an OSGi fragment that attaches to `org.adempiere.ui.zk`. It uses ZK's `UiLifeCycle` mechanism to automatically detect and enhance the global search component at runtime — **no theme modification, no core changes, no configuration required**.
+### Requirements
 
-```
-User logs in → Desktop created → GlobalSearch component attached
-  → Plugin detects it via UiLifeCycle listener
-    → Replaces with multi-language-aware version
-      → Loads all AD_Menu_Trl translations into memory
-        → Search now matches across all languages
-```
+- iDempiere 12 or later
+- At least 2 active languages with translated menu items
 
-## Requirements
+### Installation
 
-- iDempiere 11.0 or later
-- At least 2 active languages with translated menu items (`AD_Menu_Trl.IsTranslated = 'Y'`)
+1. Download `org.idempiere.zk.multilang.search_x.x.x.jar` from [Releases](../../releases)
 
-## Installation
-
-### Option A: From Pre-built Release
-
-1. Download the latest `p2-repository.zip` from [Releases](../../releases)
-2. Extract to a directory on your iDempiere server
-3. Run:
+2. Copy the JAR to your iDempiere `plugins/` directory:
    ```bash
-   cd /opt/idempiere
-   ./update-rest-extensions.sh /path/to/extracted/repository/
+   cp org.idempiere.zk.multilang.search_*.jar /opt/idempiere/plugins/
    ```
+
+3. Register in `bundles.info`:
+   ```bash
+   echo "org.idempiere.zk.multilang.search,1.0.0,plugins/org.idempiere.zk.multilang.search_1.0.0.jar,4,false" \
+     >> /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info
+   ```
+   Adjust the version in both the filename and the entry to match your downloaded JAR.
+
 4. Restart iDempiere
+
 5. Log in and test: type a menu name in another language in the search box
 
-### Option B: Build from Source with Docker
+### Installation with Docker
 
-No JDK or Maven installation required — only Docker.
+Add the plugin JAR before iDempiere starts using a custom entrypoint:
 
-1. Clone this repository:
+```yaml
+services:
+  idempiere:
+    image: idempiereofficial/idempiere:12-release
+    entrypoint:
+      - bash
+      - -c
+      - |
+        cp /custom-plugins/*.jar /opt/idempiere/plugins/
+        grep -q multilang /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info 2>/dev/null || \
+          echo 'org.idempiere.zk.multilang.search,1.0.0,plugins/org.idempiere.zk.multilang.search_1.0.0.jar,4,false' >> /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info
+        exec ./docker-entrypoint.sh idempiere
+    volumes:
+      - ./plugins:/custom-plugins:ro
+```
+
+Place the JAR in a local `plugins/` directory mounted as `/custom-plugins`.
+
+### Verification
+
+After login, check the server log for:
+```
+Multi-Language Global Search plugin initialized
+Multi-Language Search: loaded N alternative labels for M menu items
+Multi-Language Global Search patched successfully
+```
+
+### Uninstallation
+
+1. Remove the JAR from `plugins/`
+2. Remove the line from `bundles.info`
+3. Restart iDempiere
+
+No database changes, no residual configuration.
+
+### ⚠️ Important
+
+- **Do NOT clear the OSGi cache** (`configuration/org.eclipse.osgi/`). This breaks iDempiere's classloader state.
+- The plugin installs as an OSGi fragment — it requires a restart to take effect.
+
+---
+
+## For Developers
+
+### How It Works
+
+```
+ZK WebApp starts
+  → Scans metainfo/zk/config.xml → registers WebAppInit listener
+    → WebAppInit registers UiLifeCycle listener
+      → User logs in → Desktop created → GlobalSearch component attached
+        → UiLifeCycle detects GlobalSearch via instanceof
+          → Deferred patching via Events.echoEvent (avoids timing issues)
+            → Replaces GlobalSearch with multi-language version
+              → Loads AD_Menu_Trl translations into memory
+                → Search now matches across all languages
+```
+
+### Architecture
+
+| Component | Purpose |
+|-----------|---------|
+| `MultiLangSearchInit` | `WebAppInit` — registers UiLifeCycle listener on ZK startup |
+| `MultiLangSearchPatcher` | `UiLifeCycle` — detects and replaces GlobalSearch at runtime |
+| `MultiLangMenuSearchController` | Extended `MenuSearchController` with cross-language comparator |
+
+The plugin is an **OSGi fragment** attached to `org.adempiere.ui.zk`. It shares the host bundle's classloader — no `Import-Package` or `Require-Bundle` needed (adding them breaks the host's package wiring).
+
+### Key Design Decisions
+
+**Runtime patching instead of ZUL override:**
+Multiple OSGi fragments providing the same classpath resource have unpredictable ordering. Runtime patching via `UiLifeCycle` + `echoEvent` works with any theme.
+
+**Deferred patching with echoEvent:**
+`afterComponentAttached` fires during `insertBefore()`, before `setId()` completes. Direct DOM modification at that point corrupts the parent method's state. `Events.echoEvent` defers to the next client round-trip when the DOM is stable.
+
+**No Import-Package in MANIFEST.MF:**
+Fragment's `Import-Package` merges into the host's imports, changing package wiring and breaking ZK's class resolution (causes `CustomGridDataLoader` ClassNotFoundException). Fragment inherits all host dependencies automatically.
+
+**Backward-compatible API access:**
+`MenuItem(String)` and `Icon.getIconSclass()` exist only in iDempiere 14+. The plugin uses factory methods and reflection to work on iDempiere 12+.
+
+### Building from Source
+
+Requires Docker only — no local JDK or Maven.
+
+1. Clone iDempiere and build the p2 target platform:
    ```bash
-   git clone https://github.com/user/org.idempiere.zk.multilang.search.git
-   cd org.idempiere.zk.multilang.search
+   git clone https://github.com/idempiere/idempiere.git
+   docker run --rm -v "$(pwd)/idempiere":/src -v "$HOME/.m2":/root/.m2 \
+     -w /src maven:3.9-eclipse-temurin-17 mvn verify -DskipTests
    ```
 
-2. Clone and build iDempiere (needed for the p2 target platform):
+2. Clone and build this plugin:
    ```bash
-   git clone https://github.com/idempiere/idempiere.git ../idempiere
-   docker run --rm -v "$(pwd)/../idempiere":/src -w /src \
-     maven:3.9-eclipse-temurin-17 mvn verify -DskipTests
-   ```
-
-3. Build the plugin:
-   ```bash
+   git clone https://github.com/anthropics/org.idempiere.zk.multilang.search.git
    docker run --rm \
-     -v "$(pwd)":/plugin -v "$(pwd)/../idempiere":/idempiere -w /plugin \
-     maven:3.9-eclipse-temurin-17 \
-     mvn verify -Didempiere.core.repository.url=file:///idempiere/org.idempiere.p2/target/repository
+     -v "$(pwd)/org.idempiere.zk.multilang.search":/plugin \
+     -v "$(pwd)/idempiere":/idempiere \
+     -v "$HOME/.m2":/root/.m2 \
+     -w /plugin maven:3.9-eclipse-temurin-17 \
+     mvn verify -Didempiere.repository=file:///idempiere/org.idempiere.p2/target/repository
    ```
 
-4. The p2 repository is at:
-   ```
-   org.idempiere.zk.multilang.search.p2/target/repository/
-   ```
+3. Output: `org.idempiere.zk.multilang.search.p2/target/repository/plugins/*.jar`
 
-5. Deploy to iDempiere:
-   ```bash
-   # Copy to server, then:
-   cd /opt/idempiere
-   ./update-rest-extensions.sh /path/to/repository/
-   systemctl restart idempiere
-   ```
+### Project Structure
 
-## Verification
-
-After installation and restart:
-
-1. Log in with a non-English locale (e.g., `zh_TW`)
-2. Click the global search box (or press `Alt+G`)
-3. Type an English menu name like `Purchase`
-4. You should see Chinese menu items that match the English translation
-
-Check the server log for:
 ```
-INFO: Multi-Language Global Search plugin initialized
-INFO: Multi-Language Search: loaded N alternative labels for M menu items
-INFO: Multi-Language Global Search patched successfully
+org.idempiere.zk.multilang.search/
+├── META-INF/MANIFEST.MF
+├── build.properties
+├── pom.xml
+└── src/
+    ├── metainfo/zk/config.xml                          ← ZK listener registration
+    └── tw/idempiere/multilang/search/
+        ├── MultiLangSearchInit.java                    ← WebAppInit (40 lines)
+        ├── MultiLangSearchPatcher.java                 ← UiLifeCycle + echoEvent (105 lines)
+        └── MultiLangMenuSearchController.java          ← Search engine (930 lines)
 ```
 
-## Uninstallation
+### Compatibility
 
-1. Remove the bundle from Felix console or delete from `plugins/` directory
-2. Restart iDempiere
-3. The search box returns to its original single-language behavior
-4. No database changes, no residual configuration
+| iDempiere | ZK | Status |
+|-----------|-----|--------|
+| 14.x | 10.x | Primary build target |
+| 12.x | 10.0.1 | ✅ Tested and working |
+| 11.x | 9.6.x | Should work (untested) |
 
-## Technical Details
+### Files to Diff on Upgrade
 
-- **Type:** OSGi Fragment (`Fragment-Host: org.adempiere.ui.zk`)
-- **Hook mechanism:** `metainfo/zk/config.xml` → `WebAppInit` → `UiLifeCycle` → `Events.echoEvent`
-- **Search data:** Loaded from `AD_Menu_Trl` + `AD_Menu` tables once per session
-- **Performance:** ~50ms additional load time per session, zero impact on search speed
-- **Graceful degradation:** If any component fails, the search box falls back to default behavior
+When iDempiere releases a new version, check these files for changes that may affect this plugin:
 
-## Known Limitations
+| File | Lines | What to check |
+|------|-------|---------------|
+| `MenuSearchController.java` | ~813 | Core logic — must sync if changed |
+| `GlobalSearch.java` | ~278 | Constructor signature, field names |
+| `HeaderPanel.java` | ~233 | `globalSearch` field name |
+| `MenuItem.java` | ~124 | Constructor, fields |
 
-- Uses Java reflection to access 3 private fields (upgrade-sensitive)
-- Copies `MenuSearchController` logic (~900 lines) — must be synced on iDempiere upgrades
-- Does not enhance the Document Search tab (only the Menu tab)
-- Brief visual flash on slow networks during the component replacement (~10-50ms)
+### Known Limitations
+
+- Copies ~900 lines from `MenuSearchController` — must sync on iDempiere upgrades
+- Uses reflection for 3 private fields (`menuController`, `tree`, `globalSearch`)
+- Brief visual flash during component replacement (~10-50ms on fast networks)
+- Does not enhance the Document Search tab (Menu tab only)
 - Minor memory leak: old `FavouriteController` callbacks persist until session ends
 
-## Compatibility
+### Graceful Degradation
 
-| iDempiere | Status |
-|-----------|--------|
-| 14.x | Primary target |
-| 12.x | Should work (same ZK version) |
-| 11.x | Should work (verify `MenuSearchController` API) |
+Every failure point falls back to the original search behavior:
 
-## Files to Diff on Upgrade
-
-When upgrading iDempiere, check these files for changes:
-
-| File | Lines | Impact |
-|------|-------|--------|
-| `MenuSearchController.java` | 813 | Core dependency — must sync |
-| `GlobalSearch.java` | 278 | Constructor + field names |
-| `HeaderPanel.java` | 233 | `globalSearch` field name |
+| Failure | Behavior | User Impact |
+|---------|----------|-------------|
+| config.xml not scanned | Plugin not loaded | Original search |
+| WebAppInit throws | Plugin not loaded | Original search |
+| Reflection fails | Patching skipped | Original search |
+| DB query fails | Empty alt labels | Current language only |
+| DOM replacement fails | Old GlobalSearch kept | Original search |
 
 ## License
 
-GPLv2 — same as iDempiere. See [LICENSE](LICENSE).
+GPLv2 — same as iDempiere.
+
+## Credits
+
+Built by the [iDempiere Taiwan Community (蒜頭廟)](https://www.idempiere.tw/).

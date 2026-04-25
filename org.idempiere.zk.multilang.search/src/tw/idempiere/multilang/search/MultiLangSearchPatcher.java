@@ -7,7 +7,11 @@
  * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.           *
  * See the GNU General Public License for more details.                       *
  *****************************************************************************/
-package org.adempiere.webui.apps;
+package tw.idempiere.multilang.search;
+
+import org.adempiere.webui.apps.GlobalSearch;
+import org.adempiere.webui.apps.MenuSearchController;
+import org.adempiere.webui.panel.HeaderPanel;
 
 import java.lang.reflect.Field;
 import java.util.logging.Level;

@@ -3,6 +3,6 @@
     <config-name>multilang-search</config-name>
     <depends>zk</depends>
     <listener>
-        <listener-class>org.adempiere.webui.apps.MultiLangSearchInit</listener-class>
+        <listener-class>tw.idempiere.multilang.search.MultiLangSearchInit</listener-class>
     </listener>
 </config>
