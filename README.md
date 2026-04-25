@@ -14,29 +14,41 @@ Search menu items across **all translated languages** from the global search box
 
 ### Installation
 
-1. Download `org.idempiere.zk.multilang.search_x.x.x.jar` from [Releases](../../releases)
+1. Download `p2-repository.zip` from [Releases](../../releases) and extract it
 
-2. Open the Felix Web Console: `http://<your-server>:8080/osgi/system/console/bundles`
-   - Login: `SuperUser` / `System`
+2. Deploy using iDempiere's standard deployment tool:
+   ```bash
+   cd /opt/idempiere
+   ./update-prd.sh file:///path/to/extracted/repository org.idempiere.zk.multilang.search
+   ```
 
-3. Click **Install/Update**, select the downloaded JAR, click **Install or Update**
+3. Restart iDempiere:
+   ```bash
+   systemctl restart idempiere
+   ```
 
-4. Verify the bundle appears with status **Fragment**
+4. Log in and test: type a menu name in another language in the search box
 
-5. Restart iDempiere (required for fragment to take effect and ZK config to load)
+### Alternative: Install via Felix Web Console
 
-6. Log in and test: type a menu name in another language in the search box
+1. Download the plugin JAR from [Releases](../../releases)
+2. Open `http://<your-server>:8080/osgi/system/console/bundles` (login: `SuperUser` / `System`)
+3. Click **Install/Update**, select the JAR, click **Install or Update**
+4. Restart iDempiere
 
 ### Installation via CLI
 
 ```bash
-# Upload and install via Felix Web Console API
+# Using update-prd.sh (recommended)
+cd /opt/idempiere
+./update-prd.sh file:///path/to/p2/repository org.idempiere.zk.multilang.search
+systemctl restart idempiere
+
+# Or using Felix Web Console API
 curl -u "SuperUser:System" \
   -F "bundlefile=@org.idempiere.zk.multilang.search_1.0.0.jar" \
   -F "action=install" -F "bundlestartlevel=4" \
   http://localhost:8080/osgi/system/console/bundles
-
-# Restart iDempiere
 systemctl restart idempiere
 ```
 
@@ -73,9 +85,12 @@ Multi-Language Global Search patched successfully
 
 ### Uninstallation
 
-1. Open Felix Web Console: `http://<your-server>:8080/osgi/system/console/bundles`
-2. Find `org.idempiere.zk.multilang.search`, click **Uninstall**
-3. Restart iDempiere
+```bash
+cd /opt/idempiere
+./update-prd.sh file:///path/to/p2/repository org.idempiere.zk.multilang.search
+```
+
+The first run of `update-prd.sh` uninstalls, the second installs. To uninstall only, run once with the same arguments — it will uninstall the existing version. Then restart iDempiere.
 
 No database changes, no residual configuration.
 
