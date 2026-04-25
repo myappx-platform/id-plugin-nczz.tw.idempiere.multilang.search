@@ -111,4 +111,6 @@ public class MultiLangSearchPatcher implements UiLifeCycle {
 	@Override public void afterComponentMoved(Component parent, Component child, Component prevparent) {}
 	@Override public void afterPageAttached(Page page, org.zkoss.zk.ui.Desktop desktop) {}
 	@Override public void afterPageDetached(Page page, org.zkoss.zk.ui.Desktop prevdesktop) {}
+	@Override public void afterShadowAttached(org.zkoss.zk.ui.ShadowElement shadow, Component host) {}
+	@Override public void afterShadowDetached(org.zkoss.zk.ui.ShadowElement shadow, Component prevhost) {}
 }

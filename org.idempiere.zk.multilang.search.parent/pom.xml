@@ -8,18 +8,28 @@
     <properties>
         <tycho.version>4.0.8</tycho.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <idempiere.core.repository.url>file:///${basedir}/../../idempiere/org.idempiere.p2/target/repository</idempiere.core.repository.url>
     </properties>
 
     <repositories>
         <repository>
             <id>idempiere-core</id>
-            <url>${idempiere.core.repository.url}</url>
+            <url>${idempiere.repository}</url>
+            <layout>p2</layout>
+        </repository>
+        <repository>
+            <id>eclipse-2023-09</id>
+            <url>https://archive.eclipse.org/eclipse/updates/4.29</url>
+            <layout>p2</layout>
+        </repository>
+        <repository>
+            <id>orbit-2023-09</id>
+            <url>https://download.eclipse.org/tools/orbit/simrel/orbit-aggregation/release/4.29.0</url>
             <layout>p2</layout>
         </repository>
     </repositories>
 
     <build>
+        <sourceDirectory>src</sourceDirectory>
         <plugins>
             <plugin>
                 <groupId>org.eclipse.tycho</groupId>
@@ -32,6 +42,16 @@
                 <artifactId>target-platform-configuration</artifactId>
                 <version>${tycho.version}</version>
                 <configuration>
+                    <pomDependencies>consider</pomDependencies>
+                    <dependency-resolution>
+                        <extraRequirements>
+                            <requirement>
+                                <type>eclipse-plugin</type>
+                                <id>org.eclipse.core.runtime</id>
+                                <versionRange>0.0.0</versionRange>
+                            </requirement>
+                        </extraRequirements>
+                    </dependency-resolution>
                     <environments>
                         <environment>
                             <os>linux</os>
