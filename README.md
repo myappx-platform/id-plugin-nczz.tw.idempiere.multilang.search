@@ -19,7 +19,7 @@ Search menu items across **all translated languages** from the global search box
 2. Deploy using iDempiere's standard deployment tool:
    ```bash
    cd /opt/idempiere
-   ./update-prd.sh file:///path/to/extracted/repository org.idempiere.zk.multilang.search
+   ./update-prd.sh file:///path/to/extracted/repository tw.idempiere.multilang.search
    ```
 
 3. Restart iDempiere:
@@ -41,12 +41,12 @@ Search menu items across **all translated languages** from the global search box
 ```bash
 # Using update-prd.sh (recommended)
 cd /opt/idempiere
-./update-prd.sh file:///path/to/p2/repository org.idempiere.zk.multilang.search
+./update-prd.sh file:///path/to/p2/repository tw.idempiere.multilang.search
 systemctl restart idempiere
 
 # Or using Felix Web Console API
 curl -u "SuperUser:System" \
-  -F "bundlefile=@org.idempiere.zk.multilang.search_1.0.0.jar" \
+  -F "bundlefile=@tw.idempiere.multilang.search_1.0.0.jar" \
   -F "action=install" -F "bundlestartlevel=4" \
   http://localhost:8080/osgi/system/console/bundles
 systemctl restart idempiere
@@ -66,7 +66,7 @@ services:
       - |
         cp /custom-plugins/*.jar /opt/idempiere/plugins/
         grep -q multilang /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info 2>/dev/null || \
-          echo 'org.idempiere.zk.multilang.search,1.0.0,plugins/org.idempiere.zk.multilang.search_1.0.0.jar,4,false' >> /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info
+          echo 'tw.idempiere.multilang.search,1.0.0,plugins/tw.idempiere.multilang.search_1.0.0.jar,4,false' >> /opt/idempiere/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info
         exec ./docker-entrypoint.sh idempiere
     volumes:
       - ./plugins:/custom-plugins:ro
@@ -87,7 +87,7 @@ Multi-Language Global Search patched successfully
 
 ```bash
 cd /opt/idempiere
-./update-prd.sh file:///path/to/p2/repository org.idempiere.zk.multilang.search
+./update-prd.sh file:///path/to/p2/repository tw.idempiere.multilang.search
 ```
 
 The first run of `update-prd.sh` uninstalls, the second installs. To uninstall only, run once with the same arguments — it will uninstall the existing version. Then restart iDempiere.
@@ -154,21 +154,21 @@ Requires Docker only — no local JDK or Maven.
 
 2. Clone and build this plugin:
    ```bash
-   git clone https://github.com/anthropics/org.idempiere.zk.multilang.search.git
+   git clone https://github.com/nczz/idempiere-multilang-search.git
    docker run --rm \
-     -v "$(pwd)/org.idempiere.zk.multilang.search":/plugin \
+     -v "$(pwd)/tw.idempiere.multilang.search":/plugin \
      -v "$(pwd)/idempiere":/idempiere \
      -v "$HOME/.m2":/root/.m2 \
      -w /plugin maven:3.9-eclipse-temurin-17 \
      mvn verify -Didempiere.repository=file:///idempiere/org.idempiere.p2/target/repository
    ```
 
-3. Output: `org.idempiere.zk.multilang.search.p2/target/repository/plugins/*.jar`
+3. Output: `tw.idempiere.multilang.search.p2/target/repository/plugins/*.jar`
 
 ### Project Structure
 
 ```
-org.idempiere.zk.multilang.search/
+tw.idempiere.multilang.search/
 ├── META-INF/MANIFEST.MF
 ├── build.properties
 ├── pom.xml

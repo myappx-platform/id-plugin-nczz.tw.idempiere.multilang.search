@@ -1,0 +1,11 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>tw.idempiere.multilang.search</groupId>
+        <artifactId>tw.idempiere.multilang.search.parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../tw.idempiere.multilang.search.parent/pom.xml</relativePath>
+    </parent>
+    <artifactId>tw.idempiere.multilang.search.p2</artifactId>
+    <packaging>eclipse-repository</packaging>
+</project>

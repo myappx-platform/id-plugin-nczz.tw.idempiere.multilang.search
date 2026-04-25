@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <site>
-    <bundle id="org.idempiere.zk.multilang.search" version="0.0.0">
+    <bundle id="tw.idempiere.multilang.search" version="0.0.0">
         <category name="multilang-search"/>
     </bundle>
     <category-def name="multilang-search" label="Multi-Language Global Search">

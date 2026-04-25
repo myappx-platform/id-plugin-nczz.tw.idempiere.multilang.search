@@ -1,9 +1,9 @@
 Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: iDempiere Multi-Language Global Search
-Bundle-SymbolicName: org.idempiere.zk.multilang.search
+Bundle-SymbolicName: tw.idempiere.multilang.search
 Bundle-Version: 1.0.0.qualifier
 Bundle-Vendor: iDempiere Community
 Fragment-Host: org.adempiere.ui.zk;bundle-version="11.0.0"
 Bundle-RequiredExecutionEnvironment: JavaSE-17
-Automatic-Module-Name: org.idempiere.zk.multilang.search
+Automatic-Module-Name: tw.idempiere.multilang.search
