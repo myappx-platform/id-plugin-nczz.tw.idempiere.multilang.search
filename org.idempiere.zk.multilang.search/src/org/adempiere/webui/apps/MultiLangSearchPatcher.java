@@ -74,11 +74,15 @@ public class MultiLangSearchPatcher implements UiLifeCycle {
 			newGs.setPlaceHolderText("Alt+G");
 			newGs.setTooltipText("Alt+G");
 
-			// 3. Replace in DOM
+			// 3. Replace in DOM — must detach old BEFORE inserting new (duplicate ID not allowed)
 			Component parent = oldGs.getParent();
-			parent.insertBefore(newGs, oldGs);
-			newGs.setAttribute(PATCHED_ATTR, Boolean.TRUE); // prevent re-patching the new one
+			Component nextSibling = oldGs.getNextSibling();
 			oldGs.detach();
+			if (nextSibling != null)
+				parent.insertBefore(newGs, nextSibling);
+			else
+				parent.appendChild(newGs);
+			newGs.setAttribute(PATCHED_ATTR, Boolean.TRUE); // prevent re-patching the new one
 
 			// 4. Update HeaderPanel.globalSearch field for Alt+G support
 			Component hp = newGs.getParent();

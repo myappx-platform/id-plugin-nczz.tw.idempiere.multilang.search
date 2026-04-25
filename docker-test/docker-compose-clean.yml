@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  idempiere:
+    image: idempiereofficial/idempiere:12-release
+    depends_on:
+      - postgres
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: idempiere
+      DB_USER: adempiere
+      DB_PASS: adempiere
+      DB_ADMIN_PASS: postgres
+    ports:
+      - "8080:8080"
+volumes:
+  pgdata:

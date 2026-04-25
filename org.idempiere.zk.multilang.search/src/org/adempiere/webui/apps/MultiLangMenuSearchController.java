@@ -635,7 +635,7 @@ public class MultiLangMenuSearchController extends MenuSearchController {
 		} else {
 			@SuppressWarnings("unchecked")
 			ListSubModel<MenuItem> subModel = (ListSubModel<MenuItem>) ListModels.toListSubModel(model, new MenuListComparator(), model.size());
-			newModel = (ListModelList<MenuItem>) subModel.getSubModel(new MenuItem(value), -1);
+			newModel = (ListModelList<MenuItem>) subModel.getSubModel(newSearchMenuItem(value), -1);
 		}
 		updateListboxModel(newModel);
 	}
@@ -797,6 +797,42 @@ public class MultiLangMenuSearchController extends MenuSearchController {
 		highlightText = s;
 	}
 	
+	// === MODIFICATION START: backward-compatible helpers ===
+
+	/**
+	 * Create a MenuItem with label set. Compatible with iDempiere 12 (no String constructor)
+	 * and iDempiere 14+ (has MenuItem(String) constructor).
+	 */
+	private static MenuItem newSearchMenuItem(String label) {
+		MenuItem item = new MenuItem();
+		item.setLabel(label);
+		return item;
+	}
+
+	/** Cached icon sclass for "New" button — resolved once via reflection */
+	private static String cachedNewIconSclass;
+	private static boolean iconSclassResolved;
+
+	/**
+	 * Get icon sclass for "New" button, compatible with both iDempiere 14+ (Icon.getIconSclass)
+	 * and iDempiere 12 and earlier (direct CSS class string).
+	 */
+	private static String getNewIconSclass() {
+		if (!iconSclassResolved) {
+			iconSclassResolved = true;
+			try {
+				// iDempiere 14+: Icon.getIconSclass(String)
+				java.lang.reflect.Method m = Icon.class.getMethod("getIconSclass", String.class);
+				cachedNewIconSclass = (String) m.invoke(null, Icon.NEW);
+			} catch (Exception e) {
+				// iDempiere 12 and earlier: direct CSS class
+				cachedNewIconSclass = "z-icon-New";
+			}
+		}
+		return cachedNewIconSclass;
+	}
+	// === MODIFICATION END ===
+
 	/**
 	 * {@link ListitemRenderer} for {@link #listbox}	 
 	 */
@@ -869,7 +905,7 @@ public class MultiLangMenuSearchController extends MenuSearchController {
 			if (isWindow) {
 				ToolBarButton newBtn = new ToolBarButton();
 				if (ThemeManager.isUseFontIconForImage())
-					newBtn.setIconSclass(Icon.getIconSclass(Icon.NEW));
+					newBtn.setIconSclass(getNewIconSclass());
 				else
 					newBtn.setImage(ThemeManager.getThemeResource("images/New16.png"));
 				newBtn.addEventListener(Events.ON_CLICK, MultiLangMenuSearchController.this);
