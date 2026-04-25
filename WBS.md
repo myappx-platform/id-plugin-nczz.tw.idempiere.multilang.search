@@ -573,31 +573,257 @@ iDempiere 使用 GPLv2。本 plugin 作為 OSGi fragment 附加到 GPLv2 的 hos
 
 ---
 
-## 8. 長期路線圖
+## 8. 領域知識需求與專家建議
 
-### 8.1 貢獻回 iDempiere Core
-- 8.1.1 向 iDempiere JIRA 提 Feature Request
+> 本節列出實作本 plugin 所需的領域知識，並以各領域專家的角度提出注意事項與驗證要求。
+> 開發者在動手前應逐項確認自己是否具備對應知識，不足的部分先補課再開工。
+
+### 9.1 OSGi Framework
+
+**需要程度**：必須
+**對應 WBS**：0, 1
+
+**需要的知識**：
+- Fragment-Host 機制：fragment 沒有自己的 classloader，共享 host bundle 的 classloader
+- Fragment 不能有 Bundle-Activator（OSGi 規範禁止）
+- Fragment 的 classpath 資源會 merge 到 host bundle，但多個 fragment 提供同路徑資源時順序不可控
+- Declarative Services（@Component + OSGI-INF XML）是 fragment 註冊服務的標準方式
+- Bundle lifecycle：fragment 在 host bundle resolve 時一起 resolve，無法獨立啟停
+
+**⚠️ 專家建議**：
+
+1. **不要假設 fragment 的 class 能覆蓋 host 的同名 class。** Equinox 的行為是 host class 優先。如果你想「替換」MenuSearchController.class，這條路走不通。只能建立新 class（不同名）。
+
+2. **Fragment resolve 失敗是靜默的。** 如果 MANIFEST.MF 的 Require-Bundle 版本不匹配，fragment 不會 resolve，但 iDempiere 照常啟動。你不會看到明顯的錯誤訊息。**驗證方式**：安裝後在 Felix console 執行 `lb | grep multilang`，確認 bundle 狀態是 `Resolved`（不是 `Installed`）。
+
+3. **Fragment 的 Import-Package 和 Require-Bundle 是給 Tycho 編譯用的。** 執行期 fragment 共享 host 的所有依賴，不需要自己 resolve。但如果編譯期缺少依賴宣告，Tycho 會報錯。
+
+### 9.2 ZK Framework
+
+**需要程度**：必須（本專案最核心的領域知識）
+**對應 WBS**：0, 2, 3
+
+**需要的知識**：
+- `metainfo/zk/config.xml`：ZK 啟動時掃描 classpath 的 JAR/bundle，自動載入此檔案註冊 listener
+- `WebAppInit` 介面：在 ZK WebApp 初始化時觸發，可取得 `WebApp` 和 `Configuration` 物件
+- `UiLifeCycle` 介面：全域 listener，5 個 callback（afterComponentAttached 等）
+- `Events.echoEvent`：將事件送到 client 再回傳 server，用於延遲執行（下一次 request）
+- `ListModels.toListSubModel`：ZK 的 list 過濾機制，接受 Comparator 做 filter
+- Component 生命週期：`insertBefore` 觸發 `afterComponentAttached`，但此時 parent 的後續程式碼可能還沒跑完
+
+**⚠️ 專家建議**：
+
+1. **`config.xml` 在 OSGi 環境中是否被掃描，是本專案最大的未知數。** ZK 的 `ConfigParser` 掃描 classpath 的 `metainfo/zk/config.xml`，但在 OSGi 中 classpath 的概念不同於傳統 WAR。iDempiere 的 core 從未使用過 `config.xml`（只用 `lang-addon.xml`）。**Spike 0.1 是 go/no-go 的關鍵門檻，必須第一個做。**
+
+2. **`afterComponentAttached` 的觸發時機比你想的更早。** 它在 `insertBefore`/`appendChild` 的那一刻就觸發，不是在整個 method 執行完之後。這就是為什麼我們需要 `echoEvent` 延遲。**絕對不要在 afterComponentAttached 中直接修改 DOM。**
+
+3. **`echoEvent` 需要 client 存在。** 它的機制是 server → client → server。如果在 Desktop 建立的極早期（client 還沒連上）觸發，echoEvent 可能不會被處理。**驗證方式**：在 Spike 0.2 中確認 echoEvent handler 確實被呼叫。
+
+4. **ZK CE vs EE 的 API 差異。** iDempiere 使用 ZK CE（Community Edition）。部分 ZK API 只在 EE 中可用。`WebAppInit` 和 `UiLifeCycle` 都是 CE API，但請在 Spike 中實際驗證，不要只看 JavaDoc。
+
+5. **`ListModels.toListSubModel` 的 Comparator 是外部傳入的。** 這意味著你無法透過替換 model 來注入自訂 comparator——comparator 是在 `onSearchEcho()` 中 `new` 出來的。這就是為什麼必須複製 `MenuSearchController`。
+
+### 9.3 iDempiere 內部架構
+
+**需要程度**：必須
+**對應 WBS**：3, 4
+
+**需要的知識**：
+- `HeaderPanel`：`createSearchPanel()` 是 protected，`globalSearch` 和 `menuTreePanel` 是 private
+- `GlobalSearch`：constructor 接受 concrete `MenuSearchController`（無 interface），內部有 menuController 和 docController 兩個 tab
+- `MenuSearchController`：813 行，所有內部狀態（model, listbox, layout, fullModel）都是 private，10+ 個 public methods
+- `MenuItem`：獨立 public class，有 label/description/image/type/data 五個欄位
+- `MTree.getNodeDetails()`：根據 session language JOIN AD_Menu_Trl 取翻譯名稱
+- `MTreeNode.getNode_ID()`：在 menu tree 中等於 AD_Menu_ID
+
+**⚠️ 專家建議**：
+
+1. **複製 MenuSearchController 是最大的技術債。** 813 行程式碼，每次 iDempiere 升版都要 diff 同步。**建議在複製時加上明確的註解標記**：
+   ```java
+   // === COPIED FROM MenuSearchController.java (iDempiere 14.0, commit xxxxx) ===
+   // === MODIFICATION START: multi-lang comparator ===
+   // === MODIFICATION END ===
+   ```
+   這樣升版時可以快速定位哪些是原始碼、哪些是修改。
+
+2. **不要假設 MenuItem.getData() 的型別。** 根據 tree 的實作方式，`getData()` 可能回傳 `DefaultTreeNode<?>` 或 `Treeitem`。兩種情況取 MTreeNode 的方式不同：
+   - `DefaultTreeNode` → `((MTreeNode) treeNode.getData()).getNode_ID()`
+   - `Treeitem` → `((MTreeNode) treeItem.getAttribute("MTreeNode")).getNode_ID()`
+   
+   **必須處理兩種情況，否則會 ClassCastException。**
+
+3. **GlobalSearch 的 DocumentSearchController 會被重建。** 替換 GlobalSearch 時，新的 GlobalSearch 會建立一個全新的 DocumentSearchController。舊的 DocumentSearchController 的狀態（如果有）會丟失。目前 DocumentSearchController 是 stateless 的，但未來版本可能改變。**驗證方式**：替換後測試 Document Search tab 的搜尋功能。
+
+4. **`FavouriteController` 的 callback 綁定在舊 controller 上。** `MenuSearchController.create()` 中註冊了 `FavouriteController.addDeletedCallback` 和 `addInsertedCallback`。替換後，舊 controller 的 callback 仍然存在但指向已廢棄的 listbox。新 controller 會註冊自己的 callback。**需確認不會導致重複觸發或 NPE。**
+
+### 9.4 Java Reflection
+
+**需要程度**：必須
+**對應 WBS**：3
+
+**需要的知識**：
+- `getDeclaredField` vs `getField`：前者可取 private field，後者只取 public
+- `setAccessible(true)`：繞過 Java 存取控制
+- Java 17 module system 對 reflection 的影響
+- OSGi 環境中 reflection 的 classloader 考量
+
+**⚠️ 專家建議**：
+
+1. **iDempiere 目前沒有啟用 Java module system（沒有 module-info.java）。** 所以 `setAccessible(true)` 可以正常運作。但 Java 17+ 會在 stderr 印出 `WARNING: An illegal reflective access operation has occurred`。這不影響功能但會污染 log。**如果未來 iDempiere 啟用 module system，所有 reflection 都會失敗。** 這是推動 Section 9.1（貢獻回 core）的最強理由。
+
+2. **Reflection 的 field name 是字串硬編碼。** 如果 iDempiere 重構改了 field name（例如 `menuController` 改成 `menuCtrl`），reflection 會靜默失敗（NoSuchFieldException）。**建議把所有 reflection 的 field name 集中定義為常數**，升版時只需改一處。
+
+3. **不要 cache Field 物件跨 request。** 雖然 `getDeclaredField` 有一定開銷，但 Field 物件綁定到特定的 Class 物件。在 OSGi 中，bundle 更新後 Class 物件會變，cached Field 會失效。每次 patching 都重新取 Field 是最安全的做法（反正每個 Desktop 只做一次）。
+
+### 9.5 iDempiere DB / SQL
+
+**需要程度**：必須
+**對應 WBS**：4
+
+**需要的知識**：
+- `AD_Menu_Trl` 表結構：AD_Menu_ID, AD_Language, Name, IsTranslated, IsActive
+- `AD_Menu` 基礎表：AD_Menu_ID, Name（base language 的名稱）
+- `DB.prepareStatement(sql, trxName)` / `ResultSet` / `DB.close(rs, pstmt)` 的標準用法
+- `Env.getAD_Language(Env.getCtx())` 取得當前 session 語系
+- `Env.isBaseLanguage(ctx, tableName)` 判斷是否為基礎語系
+
+**⚠️ 專家建議**：
+
+1. **SQL 查詢必須用 PreparedStatement，不要拼字串。** iDempiere 的 DB API 已經封裝好了，直接用 `DB.prepareStatement`。這不只是安全問題，也是 iDempiere 的 coding convention。
+
+2. **trxName 傳 null。** 我們的查詢是唯讀的，不需要事務。傳 null 讓 iDempiere 使用 autocommit connection。
+
+3. **一定要在 finally 中 close ResultSet 和 PreparedStatement。** iDempiere 的 connection pool 有限，leak 會導致系統卡死。用 `DB.close(rs, pstmt)` 一次關閉。
+
+4. **AD_Menu_Trl 的 IsTranslated 欄位很重要。** 有些語系的翻譯記錄存在但 IsTranslated='N'（表示只是從基礎語系複製過來，還沒真正翻譯）。這些記錄的 Name 和基礎語系相同，搜尋時會產生無意義的重複匹配。雖然不影響正確性，但 WHERE IsTranslated='Y' 可以減少無效資料。
+
+### 9.6 Maven / Tycho Build
+
+**需要程度**：必須
+**對應 WBS**：1, 6
+
+**需要的知識**：
+- Tycho 的 `eclipse-plugin` packaging：從 MANIFEST.MF 解析依賴
+- Target platform：Tycho 需要 iDempiere 的 p2 repository 來 resolve OSGi 依賴
+- `build.properties`：控制哪些資源被包含在 bundle 中
+- p2 repository 產出：`eclipse-repository` packaging + `category.xml`
+
+**⚠️ 專家建議**：
+
+1. **必須先 build iDempiere core。** Tycho 需要 iDempiere 的 p2 repository 來 resolve Fragment-Host 和 Require-Bundle。在 iDempiere source 目錄執行 `mvn verify` 產出 `org.idempiere.p2/target/repository/`。**這一步可能需要 30-60 分鐘，且需要 JDK 17+。**
+
+2. **Tycho 版本必須和 iDempiere 一致（4.0.8）。** 版本不一致會導致 target platform resolve 失敗，錯誤訊息通常很難理解。
+
+3. **`build.properties` 的 `bin.includes` 必須包含 `.`（當前目錄）。** 否則 `metainfo/zk/config.xml` 不會被包含在 bundle 中，ZK 就掃描不到。這是一個常見的遺漏。
+
+4. **Fragment 的 packaging 是 `eclipse-plugin`，不是 `eclipse-fragment`。** Tycho 沒有 `eclipse-fragment` packaging type。Fragment 和 regular bundle 都用 `eclipse-plugin`，差別只在 MANIFEST.MF 有沒有 `Fragment-Host`。
+
+### 9.7 Java 併發
+
+**需要程度**：需要
+**對應 WBS**：7.2
+
+**需要的知識**：
+- ZK 的 threading model：每個 Desktop 的事件在同一個 thread 中順序處理
+- `UiLifeCycle` listener 是全域 singleton，但 callback 在各 Desktop 的 event thread 中執行
+- `afterComponentAttached` 的 thread context
+
+**⚠️ 專家建議**：
+
+1. **不需要加 synchronized。** 每次 `afterComponentAttached` 呼叫都操作不同的 Component（屬於不同 Desktop），沒有共享 mutable state。加 synchronized 反而會造成不必要的 contention。
+
+2. **但要注意 static 變數。** 如果你在 Patcher class 中使用 static field（例如 cache），就需要考慮 thread safety。**建議完全不用 static mutable state。**
+
+### 9.8 Unicode / i18n
+
+**需要程度**：需要
+**對應 WBS**：4, 7.1
+
+**需要的知識**：
+- `Util.deleteAccents()`：iDempiere 的去重音工具（用 `java.text.Normalizer`）
+- `String.toLowerCase()` 的 Locale 問題（Turkish İ/i）
+- CJK Unicode Script 偵測（`Character.UnicodeScript.HAN` 等）
+
+**⚠️ 專家建議**：
+
+1. **v0.1 不要動 `toLowerCase()` 的行為。** 原始 `MenuListComparator` 用的是 `toLowerCase()` 不帶 Locale（等同 `Locale.getDefault()`）。改成 `Locale.ROOT` 雖然更正確，但會改變行為。保持一致，降低風險。
+
+2. **CJK 偵測延到 v0.2。** v0.1 的目標是「多語系搜尋」，不是「改善 CJK 搜尋體驗」。混在一起會增加測試範圍和風險。
+
+### 9.9 軟體設計模式
+
+**需要程度**：需要
+**對應 WBS**：3, 7.3
+
+**需要的知識**：
+- Graceful degradation：任何環節失敗都 fallback 到原始行為
+- Runtime patching / monkey-patch：在不修改原始碼的情況下改變行為
+- Comparator 設計：inner class 存取外部 field 的模式
+
+**⚠️ 專家建議**：
+
+1. **Graceful degradation 的 try-catch 要包在最外層。** 不要在每個小步驟都 try-catch（會吞掉有用的 stack trace）。在 `patchGlobalSearch()` 的最外層包一個 try-catch，catch 中 log 完整 exception 並 return。
+
+2. **patching 失敗時不要嘗試「部分 patch」。** 要嘛完整替換成功，要嘛完全不動。如果在 DOM 替換到一半失敗（例如 insertBefore 成功但 detach 失敗），會留下兩個 GlobalSearch，造成更大的問題。**建議先建好新 GlobalSearch，確認無誤後再一次性替換。**
+
+3. **為 patching 加上「開關」。** 雖然 v0.1 不做 SysConfig 開關（7.8.2.4），但至少在 code 中預留一個 `private static final boolean ENABLED = true` 常數。緊急情況下可以快速 rebuild 一個停用版本。
+
+### 9.10 iDempiere 部署
+
+**需要程度**：需要
+**對應 WBS**：6
+
+**需要的知識**：
+- `update-rest-extensions.sh`：iDempiere 的標準 plugin 安裝腳本
+- Felix console：OSGi bundle 管理介面（`lb`, `start`, `stop`, `uninstall`）
+- iDempiere 的 plugins/ 目錄結構
+
+**⚠️ 專家建議**：
+
+1. **Fragment 安裝後必須重啟 iDempiere。** 不像 regular bundle 可以 hot deploy，fragment 需要 host bundle 重新 resolve。`update-rest-extensions.sh` 會提示重啟。
+
+2. **解除安裝也需要重啟。** 從 Felix console `uninstall` fragment 後，host bundle 的 classloader 仍然持有舊的 class。必須重啟才能完全清除。
+
+3. **測試時用 Felix console 的 `diag` 命令排查問題。** 如果 fragment 沒有 resolve，`diag <bundle-id>` 會告訴你缺少哪些依賴。
+
+### 9.11 授權法律
+
+**需要程度**：了解
+**對應 WBS**：7.7
+
+**⚠️ 專家建議**：
+
+1. **複製 MenuSearchController 的程式碼使本 plugin 成為 GPLv2 的衍生作品。** 必須以 GPLv2 授權發布，且必須提供原始碼。如果你打算商業發布（不公開原始碼），這條路走不通。
+
+2. **每個 Java 檔案都要加 GPLv2 license header。** 參考 iDempiere core 的任何 Java 檔案的頭部格式。
+
+---
+
+## 9. 長期路線圖
+
+### 9.1 貢獻回 iDempiere Core
+- 9.1.1 向 iDempiere JIRA 提 Feature Request
   - 標題：Multi-language menu search in Global Search Box
   - 附上 plugin 的設計文件和實測結果作為 POC
-- 8.1.2 準備 Core PR
+- 9.1.2 準備 Core PR
   - 直接在 MenuSearchController 中加入多語系支援（不需 reflection、不需複製）
   - 在 MenuListComparator 中增加 alternativeLabels 比對
   - 在 refreshModel() 中載入 AD_Menu_Trl
-- 8.1.3 若 PR 被接受
+- 9.1.3 若 PR 被接受
   - Plugin 可退役（或轉為只提供 CJK 增強等額外功能）
   - 維護成本歸零
 
-### 8.2 v0.2 功能規劃
-- 8.2.1 CJK 搜尋增強（7.1）
-- 8.2.2 搜尋結果排序優化（當前語系匹配優先）
-- 8.2.3 Tooltip 顯示匹配的語系名稱
-- 8.2.4 SysConfig 開關（允許管理員停用多語系搜尋）
+### 9.2 v0.2 功能規劃
+- 9.2.1 CJK 搜尋增強（7.1）
+- 9.2.2 搜尋結果排序優化（當前語系匹配優先）
+- 9.2.3 Tooltip 顯示匹配的語系名稱
+- 9.2.4 SysConfig 開關（允許管理員停用多語系搜尋）
 
-### 8.3 維護計劃
-- 8.3.1 每次 iDempiere 升版時 diff 以下檔案
+### 9.3 維護計劃
+- 9.3.1 每次 iDempiere 升版時 diff 以下檔案
   - MenuSearchController.java（813 行，核心依賴）
   - GlobalSearch.java（278 行，constructor + field names）
   - HeaderPanel.java（233 行，globalSearch field name）
-- 8.3.2 建立自動化 diff 腳本
+- 9.3.2 建立自動化 diff 腳本
   - 比對 iDempiere release tag 之間的變更
   - 標記影響本 plugin 的改動
