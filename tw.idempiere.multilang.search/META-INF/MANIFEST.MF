@@ -3,7 +3,7 @@ Bundle-ManifestVersion: 2
 Bundle-Name: iDempiere Plugin : nczz.tw.idempiere.multilang.search
 Bundle-SymbolicName: nczz.tw.idempiere.multilang.search
 Bundle-Version: 1.0.0.qualifier
-Bundle-Vendor: Ken Longnan <ken.longnan@gmail.com>
+Bundle-Vendor: iDempiere Community; Ken Longnan <ken.longnan@gmail.com>
 Fragment-Host: org.adempiere.ui.zk;bundle-version="0.0.0"
 Bundle-RequiredExecutionEnvironment: JavaSE-17
 Require-Capability: osgi.ee;filter:="(&(osgi.ee=JavaSE)(version>=17))"
