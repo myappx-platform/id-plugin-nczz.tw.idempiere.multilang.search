@@ -1,11 +1,15 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>tw.idempiere.multilang.search</groupId>
-        <artifactId>tw.idempiere.multilang.search.parent</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
-        <relativePath>../tw.idempiere.multilang.search.parent/pom.xml</relativePath>
-    </parent>
-    <artifactId>tw.idempiere.multilang.search</artifactId>
-    <packaging>eclipse-plugin</packaging>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>idempiere.extensions</groupId>
+		<artifactId>idempiere.extensions.parent</artifactId>
+		<version>${revision}</version>
+		<relativePath>../../idempiere-extensions-parent/pom.xml</relativePath>
+	</parent>
+
+	<version>1.0.0-SNAPSHOT</version>
+	<artifactId>nczz.tw.idempiere.multilang.search</artifactId>
+	<name>iDempiere Plugin : nczz.tw.idempiere.multilang.search</name>
+	<packaging>eclipse-plugin</packaging>
 </project>
